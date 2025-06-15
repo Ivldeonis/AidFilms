@@ -1,0 +1,6 @@
+pip install aiogram aiohttp beautifulsoup4
+
+aiogram==2.25.2
+aiohttp>=3.8.0
+beautifulsoup4>=4.12.0
+cachetools>=5.0.0  # Для кешування
