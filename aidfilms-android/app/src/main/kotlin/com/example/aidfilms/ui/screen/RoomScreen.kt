@@ -18,6 +18,8 @@ fun RoomScreen(onJoinRoom: (String, String) -> Unit) {
     val context = LocalContext.current
     var roomId by remember { mutableStateOf("") }
     var videoUrl by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+
     val syncService = remember {
         try {
             SyncService()
@@ -51,42 +53,57 @@ fun RoomScreen(onJoinRoom: (String, String) -> Unit) {
         Text("AidFilms - Спільний перегляд", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(24.dp))
 
-        TextField(
-            value = roomId,
-            onValueChange = { roomId = it },
-            label = { Text("ID Кімнати") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(16.dp))
+        if (isLoading) {
+            CircularProgressIndicator()
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Завантаження...")
+        } else {
+            TextField(
+                value = roomId,
+                onValueChange = { roomId = it },
+                label = { Text("ID Кімнати") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(16.dp))
 
-        TextField(
-            value = videoUrl,
-            onValueChange = { videoUrl = it },
-            label = { Text("URL Відео (m3u8, mp4, hls)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(24.dp))
+            TextField(
+                value = videoUrl,
+                onValueChange = { videoUrl = it },
+                label = { Text("URL Відео (m3u8, mp4, hls)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(24.dp))
 
-        Button(
-            onClick = { if (roomId.isNotBlank() && videoUrl.isNotBlank()) onJoinRoom(roomId, videoUrl) },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Приєднатися до нової кімнати")
-        }
+            Button(
+                onClick = { if (roomId.isNotBlank() && videoUrl.isNotBlank()) onJoinRoom(roomId, videoUrl) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Приєднатися до нової кімнати")
+            }
 
-        Spacer(modifier = Modifier.height(32.dp))
-        Text("Або виберіть існуючу:", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(32.dp))
+            Text("Або виберіть існуючу:", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
 
-        LazyColumn(modifier = Modifier.fillMaxWidth()) {
-            items(availableRooms) { room ->
-                ListItem(
-                    headlineContent = { Text(room) },
-                    modifier = Modifier.clickable {
-                        roomId = room
-                    }
-                )
-                HorizontalDivider()
+            LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                items(availableRooms) { room ->
+                    ListItem(
+                        headlineContent = { Text(room) },
+                        modifier = Modifier.clickable {
+                            isLoading = true
+                            syncService?.getRoomUrl(room) { url ->
+                                isLoading = false
+                                if (url != null) {
+                                    onJoinRoom(room, url)
+                                } else {
+                                    roomId = room
+                                    // Optionally show a message that URL is missing
+                                }
+                            }
+                        }
+                    )
+                    HorizontalDivider()
+                }
             }
         }
     }
