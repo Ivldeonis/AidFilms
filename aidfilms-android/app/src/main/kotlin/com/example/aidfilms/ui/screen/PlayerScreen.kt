@@ -22,15 +22,24 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.example.aidfilms.model.PlaybackState
 import com.example.aidfilms.service.SyncService
+import com.example.aidfilms.utils.FileLogger
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.flowOf
 
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(roomId: String, initialUrl: String) {
     val context = LocalContext.current
-    val syncService = remember { SyncService(roomId) }
-    val isConnected by syncService.observeConnectionStatus().collectAsState(initial = false)
+    val syncService = remember {
+        try {
+            SyncService(roomId)
+        } catch (e: Exception) {
+            FileLogger.logError(context, e)
+            null
+        }
+    }
+    val isConnected by (syncService?.observeConnectionStatus() ?: flowOf(false)).collectAsState(initial = false)
 
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
@@ -44,7 +53,7 @@ fun PlayerScreen(roomId: String, initialUrl: String) {
 
     // Listen to remote changes
     LaunchedEffect(roomId) {
-        syncService.observePlaybackState().collectLatest { remoteState ->
+        syncService?.observePlaybackState()?.collectLatest { remoteState ->
             remoteState?.let {
                 if (!isLocalChange) {
                     if (Math.abs(exoPlayer.currentPosition - it.position) > 2000) {
@@ -63,7 +72,7 @@ fun PlayerScreen(roomId: String, initialUrl: String) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (!isLocalChange) {
-                    syncService.updatePlaybackState(
+                    syncService?.updatePlaybackState(
                         PlaybackState(
                             url = initialUrl,
                             position = exoPlayer.currentPosition,
@@ -79,7 +88,7 @@ fun PlayerScreen(roomId: String, initialUrl: String) {
                 reason: Int
             ) {
                 if (reason == Player.DISCONTINUITY_REASON_SEEK && !isLocalChange) {
-                    syncService.updatePlaybackState(
+                    syncService?.updatePlaybackState(
                         PlaybackState(
                             url = initialUrl,
                             position = newPosition.contentPositionMs,

@@ -10,14 +10,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.aidfilms.service.SyncService
+import com.example.aidfilms.utils.FileLogger
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun RoomScreen(onJoinRoom: (String, String) -> Unit) {
+    val context = LocalContext.current
     var roomId by remember { mutableStateOf("") }
     var videoUrl by remember { mutableStateOf("") }
-    val syncService = remember { SyncService() }
-    val availableRooms by syncService.observeRooms().collectAsState(initial = emptyList())
-    val isConnected by syncService.observeConnectionStatus().collectAsState(initial = false)
+    val syncService = remember {
+        try {
+            SyncService()
+        } catch (e: Exception) {
+            FileLogger.logError(context, e)
+            null
+        }
+    }
+
+    val availableRooms by (syncService?.observeRooms() ?: kotlinx.coroutines.flow.flowOf(emptyList())).collectAsState(initial = emptyList())
+    val isConnected by (syncService?.observeConnectionStatus() ?: kotlinx.coroutines.flow.flowOf(false)).collectAsState(initial = false)
 
     Column(
         modifier = Modifier
@@ -27,21 +38,11 @@ fun RoomScreen(onJoinRoom: (String, String) -> Unit) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Статус: ", style = MaterialTheme.typography.bodySmall)
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .padding(top = 2.dp)
-                    .let {
-                        if (isConnected) it.padding(0.dp) else it // placeholder logic
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                 Surface(
-                    shape = androidx.compose.foundation.shape.CircleShape,
-                    color = if (isConnected) androidx.compose.ui.graphics.Color.Green else androidx.compose.ui.graphics.Color.Red,
-                    modifier = Modifier.size(8.dp)
-                 ) {}
-            }
+            Surface(
+                shape = androidx.compose.foundation.shape.CircleShape,
+                color = if (isConnected) androidx.compose.ui.graphics.Color.Green else androidx.compose.ui.graphics.Color.Red,
+                modifier = Modifier.size(8.dp)
+            ) {}
             Spacer(modifier = Modifier.width(4.dp))
             Text(if (isConnected) "Підключено" else "Відключено", style = MaterialTheme.typography.bodySmall)
         }
@@ -83,8 +84,6 @@ fun RoomScreen(onJoinRoom: (String, String) -> Unit) {
                     headlineContent = { Text(room) },
                     modifier = Modifier.clickable {
                         roomId = room
-                        // Note: For existing rooms, we might need to fetch the URL first
-                        // or allow user to enter it. For now, we'll just set the ID.
                     }
                 )
                 HorizontalDivider()
