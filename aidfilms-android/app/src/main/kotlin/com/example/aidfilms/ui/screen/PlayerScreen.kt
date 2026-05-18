@@ -4,12 +4,16 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -26,6 +30,7 @@ import kotlinx.coroutines.flow.collectLatest
 fun PlayerScreen(roomId: String, initialUrl: String) {
     val context = LocalContext.current
     val syncService = remember { SyncService(roomId) }
+    val isConnected by syncService.observeConnectionStatus().collectAsState(initial = false)
 
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
@@ -107,5 +112,25 @@ fun PlayerScreen(roomId: String, initialUrl: String) {
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        // Connection Indicator
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = if (isConnected) Color.Green else Color.Red,
+                modifier = Modifier.size(8.dp)
+            ) {}
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = if (isConnected) "Sync On" else "Offline",
+                color = Color.White,
+                style = androidx.compose.material3.MaterialTheme.typography.labelSmall
+            )
+        }
     }
 }
