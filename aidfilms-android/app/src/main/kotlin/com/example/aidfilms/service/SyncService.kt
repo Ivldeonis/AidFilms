@@ -65,9 +65,9 @@ class SyncService(private val roomId: String = "") {
         awaitClose { connectedRef.removeEventListener(listener) }
     }
 
-    fun getRoomUrl(roomId: String, onResult: (String?) -> Unit) {
-        roomsRef.child(roomId).child("url").get().addOnSuccessListener {
-            onResult(it.getValue(String::class.java))
+    fun getRoomData(roomId: String, onResult: (PlaybackState?) -> Unit) {
+        roomsRef.child(roomId).get().addOnSuccessListener {
+            onResult(it.getValue(PlaybackState::class.java))
         }.addOnFailureListener {
             onResult(null)
         }
@@ -75,5 +75,9 @@ class SyncService(private val roomId: String = "") {
 
     fun updatePlaybackState(state: PlaybackState) {
         currentRoomRef?.setValue(state)
+    }
+
+    fun createRoom(roomId: String, state: PlaybackState) {
+        roomsRef.child(roomId).setValue(state)
     }
 }

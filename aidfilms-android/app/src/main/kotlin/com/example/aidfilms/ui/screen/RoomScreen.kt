@@ -1,110 +1,182 @@
 package com.example.aidfilms.ui.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.aidfilms.model.PlaybackState
 import com.example.aidfilms.service.SyncService
 import com.example.aidfilms.utils.FileLogger
-import androidx.compose.ui.platform.LocalContext
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RoomScreen(onJoinRoom: (String, String) -> Unit) {
+fun RoomScreen(userId: String, onJoinRoom: (String, String) -> Unit) {
     val context = LocalContext.current
-    var roomId by remember { mutableStateOf("") }
-    var videoUrl by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
-
-    val syncService = remember {
-        try {
-            SyncService()
-        } catch (e: Exception) {
-            FileLogger.logError(context, e)
-            null
-        }
-    }
+    val syncService = remember { try { SyncService() } catch (e: Exception) { FileLogger.logError(context, e); null } }
 
     val availableRooms by (syncService?.observeRooms() ?: kotlinx.coroutines.flow.flowOf(emptyList())).collectAsState(initial = emptyList())
     val isConnected by (syncService?.observeConnectionStatus() ?: kotlinx.coroutines.flow.flowOf(false)).collectAsState(initial = false)
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Статус: ", style = MaterialTheme.typography.bodySmall)
-            Surface(
-                shape = androidx.compose.foundation.shape.CircleShape,
-                color = if (isConnected) androidx.compose.ui.graphics.Color.Green else androidx.compose.ui.graphics.Color.Red,
-                modifier = Modifier.size(8.dp)
-            ) {}
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(if (isConnected) "Підключено" else "Відключено", style = MaterialTheme.typography.bodySmall)
-        }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var showPasswordDialog by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
 
-        Spacer(modifier = Modifier.height(16.dp))
-        Text("AidFilms - Спільний перегляд", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(24.dp))
-
-        if (isLoading) {
-            CircularProgressIndicator()
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("Завантаження...")
-        } else {
-            TextField(
-                value = roomId,
-                onValueChange = { roomId = it },
-                label = { Text("ID Кімнати") },
-                modifier = Modifier.fillMaxWidth()
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("AidFilms", fontWeight = FontWeight.Bold) },
+                actions = {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isConnected) Color(0xFF2E7D32) else Color(0xFFC62828),
+                        modifier = Modifier.padding(end = 16.dp)
+                    ) {
+                        Text(
+                            if (isConnected) "Online" else "Offline",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White
+                        )
+                    }
+                }
             )
-            Spacer(modifier = Modifier.height(16.dp))
-
-            TextField(
-                value = videoUrl,
-                onValueChange = { videoUrl = it },
-                label = { Text("URL Відео (m3u8, mp4, hls)") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Button(
-                onClick = { if (roomId.isNotBlank() && videoUrl.isNotBlank()) onJoinRoom(roomId, videoUrl) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Приєднатися до нової кімнати")
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showCreateDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = "Створити кімнату")
             }
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(MaterialTheme.colorScheme.background)
+        ) {
+            Text(
+                "Доступні кімнати",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(16.dp)
+            )
 
-            Spacer(modifier = Modifier.height(32.dp))
-            Text("Або виберіть існуючу:", style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(8.dp))
-
-            LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                items(availableRooms) { room ->
-                    ListItem(
-                        headlineContent = { Text(room) },
-                        modifier = Modifier.clickable {
-                            isLoading = true
-                            syncService?.getRoomUrl(room) { url ->
-                                isLoading = false
-                                if (url != null) {
-                                    onJoinRoom(room, url)
-                                } else {
-                                    roomId = room
-                                    // Optionally show a message that URL is missing
-                                }
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(availableRooms) { room ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .clickable {
+                                    isLoading = true
+                                    syncService?.getRoomData(room) { state ->
+                                        isLoading = false
+                                        if (state != null) {
+                                            if (state.password.isNotEmpty()) {
+                                                showPasswordDialog = room
+                                            } else {
+                                                onJoinRoom(room, state.url)
+                                            }
+                                        }
+                                    }
+                                },
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .padding(16.dp)
+                                    .fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(room, fontWeight = FontWeight.Medium, fontSize = 18.sp)
+                                // We don't easily know if it's locked without fetching data first,
+                                // but for UI demo we can add a lock if we had that info in the list.
                             }
                         }
-                    )
-                    HorizontalDivider()
+                    }
                 }
             }
         }
+    }
+
+    if (showCreateDialog) {
+        var newRoomId by remember { mutableStateOf("") }
+        var newUrl by remember { mutableStateOf("") }
+        var newPassword by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showCreateDialog = false },
+            title = { Text("Створити нову кімнату") },
+            text = {
+                Column {
+                    TextField(value = newRoomId, onValueChange = { newRoomId = it }, label = { Text("Назва кімнати") })
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextField(value = newUrl, onValueChange = { newUrl = it }, label = { Text("URL Відео") })
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextField(value = newPassword, onValueChange = { newPassword = it }, label = { Text("Пароль (опціонально)") })
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (newRoomId.isNotBlank() && newUrl.isNotBlank()) {
+                        syncService?.createRoom(newRoomId, PlaybackState(url = newUrl, adminId = userId, password = newPassword))
+                        showCreateDialog = false
+                        onJoinRoom(newRoomId, newUrl)
+                    }
+                }) { Text("Створити") }
+            }
+        )
+    }
+
+    if (showPasswordDialog != null) {
+        var inputPassword by remember { mutableStateOf("") }
+        var error by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { showPasswordDialog = null },
+            title = { Text("Введіть пароль") },
+            text = {
+                Column {
+                    TextField(
+                        value = inputPassword,
+                        onValueChange = { inputPassword = it; error = false },
+                        label = { Text("Пароль") },
+                        isError = error
+                    )
+                    if (error) Text("Невірний пароль", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    syncService?.getRoomData(showPasswordDialog!!) { state ->
+                        if (state?.password == inputPassword) {
+                            val r = showPasswordDialog!!
+                            showPasswordDialog = null
+                            onJoinRoom(r, state.url)
+                        } else {
+                            error = true
+                        }
+                    }
+                }) { Text("Увійти") }
+            }
+        )
     }
 }
