@@ -14,6 +14,7 @@ class SyncService(private val roomId: String = "") {
     private val roomsRef = database.getReference("rooms")
     private val currentRoomRef = if (roomId.isNotEmpty()) roomsRef.child(roomId) else null
     private val participantsRef = if (roomId.isNotEmpty()) database.getReference("participants").child(roomId) else null
+    private val signalingRef = if (roomId.isNotEmpty()) currentRoomRef?.child("signaling") else null
 
     fun observePlaybackState(): Flow<PlaybackState?> = callbackFlow {
         if (currentRoomRef == null) {

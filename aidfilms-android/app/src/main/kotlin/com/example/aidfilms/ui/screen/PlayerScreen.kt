@@ -94,6 +94,7 @@ fun PlayerScreen(roomId: String, initialUrl: String, userId: String, onBack: () 
                     exoPlayer.prepare()
                 }
 
+                // If we are NOT admin, follow the remote state
                 if (state.adminId != userId) {
                     val timeDiff = Math.abs(exoPlayer.currentPosition - it.position)
                     if (timeDiff > 2000) {
@@ -107,23 +108,33 @@ fun PlayerScreen(roomId: String, initialUrl: String, userId: String, onBack: () 
         }
     }
 
-    // Auto-sync for non-admins when playback resumes or buffers
+    // Admin periodic update to Firebase
     LaunchedEffect(exoPlayer) {
         while(true) {
-            delay(5000)
-            if (remoteState != null && remoteState?.adminId != userId) {
+            delay(2000)
+            if (remoteState?.adminId == userId) {
+                syncService?.updatePlaybackState(
+                    PlaybackState(
+                        url = exoPlayer.currentMediaItem?.localConfiguration?.uri.toString(),
+                        position = exoPlayer.currentPosition,
+                        isPlaying = exoPlayer.isPlaying,
+                        adminId = userId,
+                        password = remoteState?.password ?: "",
+                        createdAt = remoteState?.createdAt ?: System.currentTimeMillis()
+                    )
+                )
+            } else {
+                // Client fallback: If it's been too long or drift is too high, re-sync
                 remoteState?.let {
-                    val timeDiff = Math.abs(exoPlayer.currentPosition - it.position)
-                    if (it.isPlaying && timeDiff > 3000) {
-                         exoPlayer.seekTo(it.position)
-                         exoPlayer.play()
+                    if (it.isPlaying && !exoPlayer.isPlaying && isConnected) {
+                        // maybe auto-play if admin is playing
                     }
                 }
             }
         }
     }
 
-    // Sync local state to remote ONLY IF ADMIN
+    // Sync local state to remote ONLY IF ADMIN (immediate commands)
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -203,7 +214,7 @@ fun PlayerScreen(roomId: String, initialUrl: String, userId: String, onBack: () 
                 ) {}
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "Sync: ${if (isConnected) "On" else "Off"} | 👥 $participantCount",
+                    text = "Cloud: ${if (isConnected) "On" else "Off"} | 👥 $participantCount",
                     color = Color.White,
                     style = MaterialTheme.typography.labelSmall
                 )
