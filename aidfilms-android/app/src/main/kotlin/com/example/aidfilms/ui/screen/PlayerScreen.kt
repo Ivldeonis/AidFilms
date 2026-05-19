@@ -22,6 +22,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -71,7 +72,7 @@ fun PlayerScreen(roomId: String, initialUrl: String, userId: String, onBack: () 
 
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
-            val mediaItem = MediaItem.fromUri(initialUrl)
+            val mediaItem = createMediaItem(initialUrl)
             setMediaItem(mediaItem)
             prepare()
         }
@@ -86,18 +87,36 @@ fun PlayerScreen(roomId: String, initialUrl: String, userId: String, onBack: () 
         syncService?.observePlaybackState()?.collectLatest { state ->
             remoteState = state
             state?.let {
-                if (it.url != initialUrl && it.url.isNotEmpty()) {
-                    val mediaItem = MediaItem.fromUri(it.url)
+                val currentUrl = exoPlayer.currentMediaItem?.localConfiguration?.uri.toString()
+                if (it.url != currentUrl && it.url.isNotEmpty()) {
+                    val mediaItem = createMediaItem(it.url)
                     exoPlayer.setMediaItem(mediaItem)
                     exoPlayer.prepare()
                 }
 
                 if (state.adminId != userId) {
-                    if (Math.abs(exoPlayer.currentPosition - it.position) > 2000) {
+                    val timeDiff = Math.abs(exoPlayer.currentPosition - it.position)
+                    if (timeDiff > 2000) {
                         exoPlayer.seekTo(it.position)
                     }
                     if (it.isPlaying != exoPlayer.isPlaying) {
                         if (it.isPlaying) exoPlayer.play() else exoPlayer.pause()
+                    }
+                }
+            }
+        }
+    }
+
+    // Auto-sync for non-admins when playback resumes or buffers
+    LaunchedEffect(exoPlayer) {
+        while(true) {
+            delay(5000)
+            if (remoteState != null && remoteState?.adminId != userId) {
+                remoteState?.let {
+                    val timeDiff = Math.abs(exoPlayer.currentPosition - it.position)
+                    if (it.isPlaying && timeDiff > 3000) {
+                         exoPlayer.seekTo(it.position)
+                         exoPlayer.play()
                     }
                 }
             }
@@ -115,7 +134,8 @@ fun PlayerScreen(roomId: String, initialUrl: String, userId: String, onBack: () 
                             position = exoPlayer.currentPosition,
                             isPlaying = isPlaying,
                             adminId = userId,
-                            password = remoteState?.password ?: ""
+                            password = remoteState?.password ?: "",
+                            createdAt = remoteState?.createdAt ?: System.currentTimeMillis()
                         )
                     )
                 }
@@ -133,7 +153,8 @@ fun PlayerScreen(roomId: String, initialUrl: String, userId: String, onBack: () 
                             position = newPosition.contentPositionMs,
                             isPlaying = exoPlayer.isPlaying,
                             adminId = userId,
-                            password = remoteState?.password ?: ""
+                            password = remoteState?.password ?: "",
+                            createdAt = remoteState?.createdAt ?: System.currentTimeMillis()
                         )
                     )
                 }
@@ -247,4 +268,15 @@ fun PlayerScreen(roomId: String, initialUrl: String, userId: String, onBack: () 
             }
         )
     }
+}
+
+@UnstableApi
+private fun createMediaItem(url: String): MediaItem {
+    val builder = MediaItem.Builder().setUri(url)
+    when {
+        url.contains(".m3u8") -> builder.setMimeType(MimeTypes.APPLICATION_M3U8)
+        url.contains(".mpd") -> builder.setMimeType(MimeTypes.APPLICATION_MPD)
+        url.contains(".mp4") -> builder.setMimeType(MimeTypes.VIDEO_MP4)
+    }
+    return builder.build()
 }

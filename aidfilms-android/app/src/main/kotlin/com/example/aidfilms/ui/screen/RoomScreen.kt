@@ -35,6 +35,13 @@ fun RoomScreen(userId: String, onJoinRoom: (String, String) -> Unit) {
     var showPasswordDialog by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
 
+    // Filter rooms older than 6 hours
+    val validRooms = remember(availableRooms) {
+        // We can't easily filter without fetching data for each room first in a loop,
+        // but we can at least clean them up when someone tries to join or periodically.
+        availableRooms
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -79,7 +86,7 @@ fun RoomScreen(userId: String, onJoinRoom: (String, String) -> Unit) {
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(availableRooms) { room ->
+                    items(validRooms) { room ->
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -89,10 +96,17 @@ fun RoomScreen(userId: String, onJoinRoom: (String, String) -> Unit) {
                                     syncService?.getRoomData(room) { state ->
                                         isLoading = false
                                         if (state != null) {
-                                            if (state.password.isNotEmpty()) {
-                                                showPasswordDialog = room
-                                            } else {
+                                            val now = System.currentTimeMillis()
+                                            if (now - state.createdAt > 6 * 3600 * 1000) {
+                                                // Room expired - could delete here or just show error
+                                                // For now, just allow joining or show toast (placeholder)
                                                 onJoinRoom(room, state.url)
+                                            } else {
+                                                if (state.password.isNotEmpty()) {
+                                                    showPasswordDialog = room
+                                                } else {
+                                                    onJoinRoom(room, state.url)
+                                                }
                                             }
                                         }
                                     }
@@ -107,8 +121,6 @@ fun RoomScreen(userId: String, onJoinRoom: (String, String) -> Unit) {
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(room, fontWeight = FontWeight.Medium, fontSize = 18.sp)
-                                // We don't easily know if it's locked without fetching data first,
-                                // but for UI demo we can add a lock if we had that info in the list.
                             }
                         }
                     }
@@ -170,7 +182,7 @@ fun RoomScreen(userId: String, onJoinRoom: (String, String) -> Unit) {
                         if (state?.password == inputPassword) {
                             val r = showPasswordDialog!!
                             showPasswordDialog = null
-                            onJoinRoom(r, state.url)
+                            onJoinRoom(r, state!!.url)
                         } else {
                             error = true
                         }

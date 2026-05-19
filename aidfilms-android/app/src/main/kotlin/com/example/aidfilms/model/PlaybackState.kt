@@ -9,5 +9,6 @@ data class PlaybackState(
     val isPlaying: Boolean = false,
     val timestamp: Long = System.currentTimeMillis(),
     val adminId: String = "",
-    val password: String = ""
+    val password: String = "",
+    val createdAt: Long = System.currentTimeMillis()
 )
