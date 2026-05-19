@@ -13,6 +13,7 @@ class SyncService(private val roomId: String = "") {
     private val database = FirebaseDatabase.getInstance()
     private val roomsRef = database.getReference("rooms")
     private val currentRoomRef = if (roomId.isNotEmpty()) roomsRef.child(roomId) else null
+    private val participantsRef = if (roomId.isNotEmpty()) database.getReference("participants").child(roomId) else null
 
     fun observePlaybackState(): Flow<PlaybackState?> = callbackFlow {
         if (currentRoomRef == null) {
@@ -65,6 +66,29 @@ class SyncService(private val roomId: String = "") {
         awaitClose { connectedRef.removeEventListener(listener) }
     }
 
+    fun observeParticipantCount(): Flow<Int> = callbackFlow {
+        if (participantsRef == null) {
+            trySend(0)
+            close()
+            return@callbackFlow
+        }
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                trySend(snapshot.childrenCount.toInt())
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        participantsRef.addValueEventListener(listener)
+        awaitClose { participantsRef.removeEventListener(listener) }
+    }
+
+    fun joinPresence(userId: String) {
+        if (participantsRef == null) return
+        val userRef = participantsRef.child(userId)
+        userRef.setValue(true)
+        userRef.onDisconnect().removeValue()
+    }
+
     fun getRoomData(roomId: String, onResult: (PlaybackState?) -> Unit) {
         roomsRef.child(roomId).get().addOnSuccessListener {
             onResult(it.getValue(PlaybackState::class.java))
@@ -75,6 +99,10 @@ class SyncService(private val roomId: String = "") {
 
     fun updatePlaybackState(state: PlaybackState) {
         currentRoomRef?.setValue(state)
+    }
+
+    fun updateStreamUrl(newUrl: String) {
+        currentRoomRef?.child("url")?.setValue(newUrl)
     }
 
     fun createRoom(roomId: String, state: PlaybackState) {

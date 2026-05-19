@@ -32,7 +32,15 @@ class MainActivity : ComponentActivity() {
                         currentUrl = url
                     }
                 } else {
-                    PlayerScreen(currentRoomId!!, currentUrl!!, userId!!)
+                    PlayerScreen(
+                        roomId = currentRoomId!!,
+                        initialUrl = currentUrl!!,
+                        userId = userId!!,
+                        onBack = {
+                            currentRoomId = null
+                            currentUrl = null
+                        }
+                    )
                 }
             }
         }

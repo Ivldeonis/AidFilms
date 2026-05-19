@@ -2,10 +2,14 @@ package com.example.aidfilms.ui.screen
 
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,6 +18,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -29,17 +36,38 @@ import kotlinx.coroutines.flow.flowOf
 
 @OptIn(UnstableApi::class)
 @Composable
-fun PlayerScreen(roomId: String, initialUrl: String, userId: String) {
+fun PlayerScreen(roomId: String, initialUrl: String, userId: String, onBack: () -> Unit) {
     val context = LocalContext.current
+    val window = (context as? android.app.Activity)?.window
+
+    // Immersive Mode
+    DisposableEffect(Unit) {
+        window?.let {
+            val controller = WindowCompat.getInsetsController(it, it.decorView)
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+        onDispose {
+            window?.let {
+                val controller = WindowCompat.getInsetsController(it, it.decorView)
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
+    BackHandler { onBack() }
+
     val syncService = remember {
         try {
-            SyncService(roomId)
+            SyncService(roomId).apply { joinPresence(userId) }
         } catch (e: Exception) {
             FileLogger.logError(context, e)
             null
         }
     }
+
     val isConnected by (syncService?.observeConnectionStatus() ?: flowOf(false)).collectAsState(initial = false)
+    val participantCount by (syncService?.observeParticipantCount() ?: flowOf(1)).collectAsState(initial = 1)
 
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
@@ -51,13 +79,19 @@ fun PlayerScreen(roomId: String, initialUrl: String, userId: String) {
 
     var resizeMode by remember { mutableStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var remoteState by remember { mutableStateOf<PlaybackState?>(null) }
+    var showUrlDialog by remember { mutableStateOf(false) }
 
     // Listen to remote changes
     LaunchedEffect(roomId) {
         syncService?.observePlaybackState()?.collectLatest { state ->
             remoteState = state
             state?.let {
-                // If we are not admin, we follow the remote state
+                if (it.url != initialUrl && it.url.isNotEmpty()) {
+                    val mediaItem = MediaItem.fromUri(it.url)
+                    exoPlayer.setMediaItem(mediaItem)
+                    exoPlayer.prepare()
+                }
+
                 if (state.adminId != userId) {
                     if (Math.abs(exoPlayer.currentPosition - it.position) > 2000) {
                         exoPlayer.seekTo(it.position)
@@ -77,7 +111,7 @@ fun PlayerScreen(roomId: String, initialUrl: String, userId: String) {
                 if (remoteState?.adminId == userId) {
                     syncService?.updatePlaybackState(
                         PlaybackState(
-                            url = initialUrl,
+                            url = exoPlayer.currentMediaItem?.localConfiguration?.uri.toString(),
                             position = exoPlayer.currentPosition,
                             isPlaying = isPlaying,
                             adminId = userId,
@@ -95,7 +129,7 @@ fun PlayerScreen(roomId: String, initialUrl: String, userId: String) {
                 if (reason == Player.DISCONTINUITY_REASON_SEEK && remoteState?.adminId == userId) {
                     syncService?.updatePlaybackState(
                         PlaybackState(
-                            url = initialUrl,
+                            url = exoPlayer.currentMediaItem?.localConfiguration?.uri.toString(),
                             position = newPosition.contentPositionMs,
                             isPlaying = exoPlayer.isPlaying,
                             adminId = userId,
@@ -148,7 +182,7 @@ fun PlayerScreen(roomId: String, initialUrl: String, userId: String) {
                 ) {}
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = if (isConnected) "Sync On" else "Offline",
+                    text = "Sync: ${if (isConnected) "On" else "Off"} | 👥 $participantCount",
                     color = Color.White,
                     style = MaterialTheme.typography.labelSmall
                 )
@@ -156,27 +190,61 @@ fun PlayerScreen(roomId: String, initialUrl: String, userId: String) {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Button(
-                onClick = {
-                    resizeMode = if (resizeMode == AspectRatioFrameLayout.RESIZE_MODE_FIT) {
-                        AspectRatioFrameLayout.RESIZE_MODE_FILL
-                    } else {
-                        AspectRatioFrameLayout.RESIZE_MODE_FIT
+            Row {
+                 IconButton(onClick = {
+                    remoteState?.let {
+                         exoPlayer.seekTo(it.position)
+                         if (it.isPlaying) exoPlayer.play() else exoPlayer.pause()
                     }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray.copy(alpha = 0.5f)),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                modifier = Modifier.height(32.dp)
-            ) {
-                Text(
-                    if (resizeMode == AspectRatioFrameLayout.RESIZE_MODE_FIT) "Розтягнути" else "Оригінал",
-                    style = MaterialTheme.typography.labelSmall
-                )
+                }) {
+                    Icon(Icons.Default.Refresh, "Sync", tint = Color.White)
+                }
+
+                if (remoteState?.adminId == userId) {
+                    IconButton(onClick = { showUrlDialog = true }) {
+                        Icon(Icons.Default.Edit, "Change Stream", tint = Color.White)
+                    }
+                }
+
+                Button(
+                    onClick = {
+                        resizeMode = if (resizeMode == AspectRatioFrameLayout.RESIZE_MODE_FIT) {
+                            AspectRatioFrameLayout.RESIZE_MODE_FILL
+                        } else {
+                            AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray.copy(alpha = 0.5f)),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.height(32.dp).align(Alignment.CenterVertically)
+                ) {
+                    Text(
+                        if (resizeMode == AspectRatioFrameLayout.RESIZE_MODE_FIT) "Розтягнути" else "Оригінал",
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
             }
 
             if (remoteState?.adminId == userId) {
                 Text("Ви Адмін", color = Color.Yellow, style = MaterialTheme.typography.labelSmall)
             }
         }
+    }
+
+    if (showUrlDialog) {
+        var newUrl by remember { mutableStateOf(remoteState?.url ?: "") }
+        AlertDialog(
+            onDismissRequest = { showUrlDialog = false },
+            title = { Text("Змінити потік") },
+            text = {
+                TextField(value = newUrl, onValueChange = { newUrl = it }, label = { Text("Новий URL") })
+            },
+            confirmButton = {
+                Button(onClick = {
+                    syncService?.updateStreamUrl(newUrl)
+                    showUrlDialog = false
+                }) { Text("Оновити") }
+            }
+        )
     }
 }
